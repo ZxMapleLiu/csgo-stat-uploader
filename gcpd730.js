@@ -3,9 +3,11 @@ let sessionid = null;
 let profileURI = null;
 let tabURIparam = 'matchhistorycompetitive';
 
-const serverApiUrl = 'http://localhost:3000/uploadmatches';
+const serverApiUrl = 'http://127.0.0.1:3000/updatematches';
 
 const maxRetries = 3;
+
+var matchCount = 0;
 
 let providedCustomAPIKey = false;
 let apikey = '';
@@ -58,14 +60,25 @@ const convertStartTime = time=>{
 }
 
 class matchStat {
-    constructor(playerStatsArray, map, startTime, waitTime, matchTime,teamAScore,teamBScore) {
-        this.playerStatsArray = playerStatsArray;
+    constructor(map, startTime, waitTime, matchTime,teamAScore,teamBScore,
+        tap1index,tap2index,tap3index,tap4index,tap5index,
+        tbp1index,tbp2index,tbp3index,tbp4index,tbp5index) {
         this.map = map;
         this.startTime = startTime;
         this.waitTime = waitTime;
         this.matchTime = matchTime;
         this.teamAScore = teamAScore;
         this.teamBScore = teamBScore;
+        this.tap1index = tap1index;
+        this.tap2index = tap2index;
+        this.tap3index = tap3index;
+        this.tap4index = tap4index;
+        this.tap5index = tap5index;
+        this.tbp1index = tbp1index;
+        this.tbp2index = tbp2index;
+        this.tbp3index = tbp3index;
+        this.tbp4index = tbp4index;
+        this.tbp5index = tbp5index;
     }
 }
 
@@ -135,66 +148,76 @@ const getMatchStats = () => {
     let playercount = 0;
     matchesData.forEach((match, index) => {
         let map,startTime,waitTime,matchTime;
+        let teamAScore,teamBScore;
+        let scores = document.getElementsByClassName('csgo_scoreboard_score')[index].textContent.trim();
+        teamAScore = parseInt(scores);
+        teamBScore = parseInt(scores.slice(scores.indexOf(':')+1));
         match.querySelectorAll('td').forEach((dataEl, dataIndex) =>{
-            let data = dataEl.innerText.trim()
+            let data = dataEl.innerText.trim();
+            let i = data.indexOf(':');
             switch (dataIndex) {
                 case 0:
                     maplist.forEach(mapname => {
                         if(data.includes(mapname)){
                             map = mapname;
-                            break;
                         }
                     });
                     break;
-                case 1:
-                    startTime = convertStartTime(startTime);
+                case 1: 
+                    startTime = convertStartTime(data);
                     break;
                 case 2:
-                    const i = data.indexOf(':');
-                    waitTime = parseTime(data.substr(i+1));
+                    waitTime = parseTime(data.substr(i+1));//单位是秒
                     break;
                 case 3:
-                    const i = data.indexOf(':');
                     matchTime = parseTime(data.substr(i+1));
                     break;
             }
         })
+        document.getElementsByClassName('csgo_scoreboard_score')
         var matchPlayerArray = [];
         for(let i = 0; i < 10;i++){
-            let playerstat = anchors[count+i].closest('tr').querySelectorAll('td');
-            let playerid = parseInt(anchors[count+i].closest('tr').dataset.steamid64,10);
+            let playerstat = anchors[playercount+i].closest('tr').querySelectorAll('td');
+            let shortid = playerstat[0].getElementsByTagName('a')[0].getElementsByTagName('img')[0].attributes[2].value;
+            let playerid = getSteamID64(shortid);
             let latency = parseInt(playerstat[1].textContent,10);
             let kill = parseInt(playerstat[2].textContent,10);
             let assist = parseInt(playerstat[3].textContent,10);
             let death = parseInt(playerstat[4].textContent,10);
-            let mvp_round = parseInt(playerstat[5].textContent.slice(1),10);
+            let mvp_round = parseInt(playerstat[5].textContent.slice(1),10);       
             if(Number.isNaN(mvp_round))mvp_round = 0;
+            if(playerstat[5].textContent == '★')mvp_round = 1;
             let hs_rate = parseFloat(playerstat[6].textContent)/100.0;
+            if(Number.isNaN(parseFloat(playerstat[6].textContent)))hs_rate = 0;
             let score = parseInt(playerstat[7].textContent,10);
             matchPlayerArray[i] = new playerStat(playerid,latency,kill,death,assist,mvp_round,hs_rate,score);
-            anchors[count+i].classList.add(
+            anchors[playercount+i].classList.add(
                 'extension-counted'
             );
         }
-        matchStats[index] = new matchStat(matchPlayerArray,map,startTime,waitTime,matchTime);
+        matchStats[matchStats.length] = new matchStat(map,startTime,
+            waitTime,matchTime,teamAScore,teamBScore,
+            matchPlayerArray[0],matchPlayerArray[1],matchPlayerArray[2],
+            matchPlayerArray[3],matchPlayerArray[4],matchPlayerArray[5],
+            matchPlayerArray[6],matchPlayerArray[7],matchPlayerArray[8],
+            matchPlayerArray[9]);
         match.classList.add('extension-counted');
         playercount+=10;
     });
+    
 }
 
 const uploadMatchHistory = ()=>{
-    let opts = {
-        methods:'POST',
-        body:matchStats,
-        headers:{
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
+    console.log(matchStats);
+    $.ajax({
+        type:'POST',
+        url:serverApiUrl,
+        contentType:"application/json",
+        dataType:"json",
+        data:JSON.stringify(matchStats),
+        success:function(data){
+            updateStatus('发送成功！');
         }
-    };
-    fetch(serverApiUrl,opts).then((Response)=>{
-        console.log(Response.data);
-    }).catch((error)=>{
-
     })
 }
 
@@ -245,8 +268,7 @@ const fetchMatchHistoryPage = (recursively, page, retryCount) => {
             newData.querySelectorAll(elementsToAppend).forEach((tr, i) => {
                 if (i > 0) document.querySelector(elementToAppendTo).appendChild(tr);
             });
-            // updateStats();
-            // formatMatchTables();
+            getMatchStats();
             if (recursively && continue_token) {
                 updateStatus(`Loaded ${page ? page + 1 : 1} page${page ? 's' : ''}...`);
                 fetchMatchHistoryPage(true, page ? page + 1 : 1, maxRetries);
@@ -341,12 +363,12 @@ const createSteamButton = (text, iconURI) => {
     return button;
 };
 
-const fetchButton = createSteamButton('Load whole match history');
+const fetchButton = createSteamButton('读取所有对战记录');
 fetchButton.onclick = () => {
     fetchMatchHistory();
     fetchButton.onclick = () => {
         updateStatus(
-            'This button was already pressed. Reload the page if you want to start over.'
+            '你已经按过这个按钮了，如果想要重新加载请刷新页面'
         );
     };
 };
@@ -360,20 +382,26 @@ chrome.storage.sync.get(['customapikey'], data => {
             '2B3382EBA9E8C1B58054BD5C5EE1C36A'
         ];
         apikey = defaultkeys[Math.floor(Math.random() * 3)];
-        statusBar.textContent =
-            'Only 100 players from the most recent matches will be scanned without providing your own API key!';
+        // statusBar.textContent =
+        //     'Only 100 players from the most recent matches will be scanned without providing your own API key!';
     } else {
         providedCustomAPIKey = true;
         apikey = data.customapikey;
     }
-    fetchButton.insertAdjacentElement('afterend', checkBansButton);
+    // fetchButton.insertAdjacentElement('afterend', checkBansButton);
 });
 menu.appendChild(statusBar);
+
+document.querySelector('#subtabs').insertAdjacentElement('afterend', menu);
+
+initVariables();
+getMatchStats();
 
 const loadMoreButton = document.querySelector('#load_more_button');
 document.querySelector('.load_more_history_area').appendChild(loadMoreButton);
 document.querySelector('.load_more_history_area a').remove();
 loadMoreButton.onclick = () => fetchMatchHistoryPage(false, null, maxRetries);
+
 
 // embed settings
 let settingsInjected = false;
@@ -414,6 +442,10 @@ const hideSettings = () => {
         }
     });
 };
-const bancheckerSettingsButton = createSteamButton('Set Steam API key');
+const bancheckerSettingsButton = createSteamButton('设置Steam API key');
 bancheckerSettingsButton.onclick = () => showSettings();
 statusBar.insertAdjacentElement('beforeBegin', bancheckerSettingsButton);
+
+const uploadMatchesButton = createSteamButton('上传已加载的战绩');
+uploadMatchesButton.onclick = () => uploadMatchHistory();
+statusBar.insertAdjacentElement('beforebegin', uploadMatchesButton);

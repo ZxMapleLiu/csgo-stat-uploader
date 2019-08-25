@@ -13,7 +13,8 @@
         "declarativeContent",
         "contextMenus",
         "*://steamcommunity.com/*", 
-        "https://api.steampowered.com/*"
+        "https://api.steampowered.com/*",
+        "http://*/"
     ],
     "options_ui": {
         "page": "options.html",
@@ -30,9 +31,8 @@
     ],
     "content_scripts": [
         {
-            "js": [
-                "options.js"
-            ],
+            "js": ["jquery-3.4.1.min.js", "options.js", "gcpd730.js"],
+            "css": [ "display.css" ],
             "run_at": "document_end",
             "matches": [
                 "*://steamcommunity.com/id/*/gcpd/730*tab=matchhistorycompetitive",
